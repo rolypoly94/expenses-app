@@ -1184,7 +1184,11 @@ fun AddEditExpenseDialog(
     var description by remember { mutableStateOf(expense?.description ?: "") }
     var date by remember { mutableStateOf(expense?.date ?: getCurrentDateISO()) }
     var category by remember { mutableStateOf(expense?.category ?: "") }
-    var tag by remember { mutableStateOf(expense?.tag ?: "") }
+    // For new expenses, prefill with the most-recent expense's tag so multi-day
+    // trips (e.g. "Goa Dec 2025") don't need to be retyped on every entry.
+    var tag by remember {
+        mutableStateOf(expense?.tag ?: expenses.firstOrNull()?.tag.orEmpty())
+    }
     var paidBy by remember { mutableStateOf(expense?.paidBy ?: user1) }
     
     // Split drop configurations
@@ -1264,7 +1268,11 @@ fun AddEditExpenseDialog(
                         modifier = Modifier.weight(1f),
                         onClick = {
                             activeType = "shared"
-                            if (splitVal == "Personal") splitVal = "50/50"
+                            splitVal = when {
+                                viewModel.bucketFor(category) == "JUNA" -> "$user2 owes full"
+                                splitVal == "Personal" -> "50/50"
+                                else -> splitVal
+                            }
                         }
                     )
                     ToggleOptionButton(

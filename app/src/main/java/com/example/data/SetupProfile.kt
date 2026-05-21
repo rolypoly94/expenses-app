@@ -8,6 +8,5 @@ data class SetupProfile(
     @PrimaryKey val id: Int = 1,
     val user1Name: String,
     val user2Name: String,
-    val isSetup: Boolean = true,
-    val sheetUrl: String? = null
+    val isSetup: Boolean = true
 )

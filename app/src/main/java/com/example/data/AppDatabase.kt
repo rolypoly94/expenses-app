@@ -8,7 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import java.io.File
 
-@Database(entities = [Expense::class, SetupProfile::class], version = 2, exportSchema = false)
+@Database(entities = [Expense::class, SetupProfile::class], version = 3, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun expenseDao(): ExpenseDao
 
@@ -46,6 +46,30 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        // v2 → v3: drop the unused sheetUrl column from setup_profile.
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE setup_profile_new (
+                        id INTEGER PRIMARY KEY NOT NULL,
+                        user1Name TEXT NOT NULL,
+                        user2Name TEXT NOT NULL,
+                        isSetup INTEGER NOT NULL DEFAULT 1
+                    )
+                    """.trimIndent()
+                )
+                db.execSQL(
+                    """
+                    INSERT INTO setup_profile_new (id, user1Name, user2Name, isSetup)
+                    SELECT id, user1Name, user2Name, isSetup FROM setup_profile
+                    """.trimIndent()
+                )
+                db.execSQL("DROP TABLE setup_profile")
+                db.execSQL("ALTER TABLE setup_profile_new RENAME TO setup_profile")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -53,7 +77,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "expenses_database"
                 )
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
                 INSTANCE = instance
 
