@@ -1,0 +1,8 @@
+{
+  "name": "Expenses",
+  "description": "A refined, warm organic-styled expense manager with local offline persistence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

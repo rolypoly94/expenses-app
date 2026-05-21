@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Card 1 (Back Card - Gold bronze theme) -->
+    <path
+        android:fillColor="#C19553"
+        android:pathData="M24,54 h44 c2,0 3.5,-1.5 3.5,-3.5 v-20 c0,-2 -1.5,-3.5 -3.5,-3.5 h-44 c-2,0 -3.5,1.5 -3.5,3.5 v20 c0,2 1.5,3.5 3.5,3.5 Z" />
+    <!-- Magnetic stripe -->
+    <path
+        android:fillColor="#1A1A1A"
+        android:pathData="M20.5,31 h51 v4.5 h-51 z" />
+    
+    <!-- Card 2 (Front Card - Sage green theme) -->
+    <path
+        android:fillColor="#5A7D5A"
+        android:pathData="M38,76 h44 c2,0 3.5,-1.5 3.5,-3.5 v-20 c0,-2 -1.5,-3.5 -3.5,-3.5 h-44 c-2,0 -3.5,1.5 -3.5,3.5 v20 c0,2 1.5,3.5 3.5,3.5 Z" />
+    <!-- Chip details -->
+    <path
+        android:fillColor="#E8E2D7"
+        android:pathData="M44,59.5 h9 v7.5 h-9 z" />
+        
+</vector>
