@@ -4,8 +4,10 @@ import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -78,7 +80,7 @@ class ExpenseViewModel(
         return try {
             val sdfInput = SimpleDateFormat("yyyy-MM", Locale.US)
             val date = sdfInput.parse(monthKey) ?: return monthKey
-            val sdfOutput = SimpleDateFormat("MMMMM yyyy", Locale.US)
+            val sdfOutput = SimpleDateFormat("MMMM yyyy", Locale.US)
             sdfOutput.format(date)
         } catch (e: Exception) {
             monthKey
@@ -96,13 +98,12 @@ class ExpenseViewModel(
         }
     }
 
-    // Settle calculations
-    val runningBalance: StateFlow<Double> = allExpenses.map { list ->
-        list.filter { !it.settled }.sumOf { e ->
-            val u1 = setupProfile.value?.user1Name ?: ""
-            val u2 = setupProfile.value?.user2Name ?: ""
-            calculateBalanceChange(e, u1, u2)
-        }
+    // Settle calculations — recomputes when either expenses or the profile changes,
+    // so the balance is correct on cold start before names have loaded.
+    val runningBalance: StateFlow<Double> = combine(allExpenses, setupProfile) { list, profile ->
+        val u1 = profile?.user1Name ?: ""
+        val u2 = profile?.user2Name ?: ""
+        list.filter { !it.settled }.sumOf { calculateBalanceChange(it, u1, u2) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0.0)
 
     val unsettledCount: StateFlow<Int> = allExpenses.map { list ->
@@ -181,15 +182,14 @@ class ExpenseViewModel(
     }
 
     // Save profile setup
-    fun saveSetup(user1: String, user2: String) {
+    fun saveSetup(user1: String, user2: String, onResult: (Boolean) -> Unit = {}) {
         viewModelScope.launch {
-            repository.saveSetupProfile(
-                SetupProfile(
-                    user1Name = user1,
-                    user2Name = user2,
-                    isSetup = true
+            val ok = runCatching {
+                repository.saveSetupProfile(
+                    SetupProfile(user1Name = user1, user2Name = user2, isSetup = true)
                 )
-            )
+            }.isSuccess
+            onResult(ok)
         }
     }
 
@@ -202,25 +202,26 @@ class ExpenseViewModel(
         amount: Double,
         paidBy: String,
         split: String,
-        photoUri: Uri? = null
+        photoUri: Uri? = null,
+        onResult: (Boolean) -> Unit = {}
     ) {
         viewModelScope.launch {
-            var localPath: String? = null
-            if (photoUri != null) {
-                localPath = saveReceiptImage(photoUri)
-            }
-            repository.insertExpense(
-                Expense(
-                    date = date,
-                    description = description,
-                    category = category,
-                    tag = tag?.takeIf { it.isNotBlank() },
-                    amount = amount,
-                    paidBy = paidBy,
-                    split = split,
-                    attachmentUri = localPath
+            val ok = runCatching {
+                val localPath = photoUri?.let { saveReceiptImage(it) }
+                repository.insertExpense(
+                    Expense(
+                        date = date,
+                        description = description,
+                        category = category,
+                        tag = tag?.takeIf { it.isNotBlank() },
+                        amount = amount,
+                        paidBy = paidBy,
+                        split = split,
+                        attachmentUri = localPath
+                    )
                 )
-            )
+            }.isSuccess
+            onResult(ok)
         }
     }
 
@@ -236,93 +237,74 @@ class ExpenseViewModel(
         split: String,
         photoUri: Uri? = null,
         removeAttachment: Boolean = false,
-        existingAttachment: String? = null
+        existingAttachment: String? = null,
+        onResult: (Boolean) -> Unit = {}
     ) {
         viewModelScope.launch {
-            var localPath = existingAttachment
-            if (removeAttachment) {
-                if (existingAttachment != null) {
-                    try {
-                        val file = File(existingAttachment)
-                        if (file.exists()) file.delete()
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
+            val ok = runCatching {
+                var localPath = existingAttachment
+                if (removeAttachment || photoUri != null) {
+                    existingAttachment?.let { deleteLocalFile(it) }
+                    localPath = null
                 }
-                localPath = null
-            }
-            if (photoUri != null) {
-                // Remove old if any
-                if (existingAttachment != null) {
-                    try {
-                        val file = File(existingAttachment)
-                        if (file.exists()) file.delete()
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                    }
+                if (photoUri != null) {
+                    localPath = saveReceiptImage(photoUri)
                 }
-                localPath = saveReceiptImage(photoUri)
-            }
-
-            repository.updateExpense(
-                Expense(
-                    id = id,
-                    date = date,
-                    description = description,
-                    category = category,
-                    tag = tag?.takeIf { it.isNotBlank() },
-                    amount = amount,
-                    paidBy = paidBy,
-                    split = split,
-                    attachmentUri = localPath
+                repository.updateExpense(
+                    Expense(
+                        id = id,
+                        date = date,
+                        description = description,
+                        category = category,
+                        tag = tag?.takeIf { it.isNotBlank() },
+                        amount = amount,
+                        paidBy = paidBy,
+                        split = split,
+                        attachmentUri = localPath
+                    )
                 )
-            )
+            }.isSuccess
+            onResult(ok)
         }
     }
 
     // Delete Expense
-    fun deleteExpense(expense: Expense) {
+    fun deleteExpense(expense: Expense, onResult: (Boolean) -> Unit = {}) {
         viewModelScope.launch {
-            if (expense.attachmentUri != null) {
-                try {
-                    val file = File(expense.attachmentUri)
-                    if (file.exists()) file.delete()
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-            repository.deleteExpenseById(expense.id)
+            val ok = runCatching {
+                expense.attachmentUri?.let { deleteLocalFile(it) }
+                repository.deleteExpenseById(expense.id)
+            }.isSuccess
+            onResult(ok)
         }
     }
 
     // Settle Up
-    fun settleUp() {
+    fun settleUp(onResult: (Boolean) -> Unit = {}) {
         viewModelScope.launch {
-            repository.settleAllUnsettled()
+            val ok = runCatching { repository.settleAllUnsettled() }.isSuccess
+            onResult(ok)
         }
     }
 
-    // Helper file copier
-    private fun saveReceiptImage(uri: Uri): String? {
-        return try {
-            val context = getApplication<Application>()
-            val receiptsDir = File(context.filesDir, "receipts")
-            if (!receiptsDir.exists()) {
-                receiptsDir.mkdirs()
-            }
-            val fileName = "receipt_${System.currentTimeMillis()}.jpg"
-            val destFile = File(receiptsDir, fileName)
+    private suspend fun deleteLocalFile(path: String) = withContext(Dispatchers.IO) {
+        runCatching {
+            val file = File(path)
+            if (file.exists()) file.delete()
+        }
+    }
 
-            context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                FileOutputStream(destFile).use { outputStream ->
-                    inputStream.copyTo(outputStream)
-                }
+    // Helper file copier — runs off the main thread.
+    private suspend fun saveReceiptImage(uri: Uri): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val context = getApplication<Application>()
+            val receiptsDir = File(context.filesDir, "receipts").apply { if (!exists()) mkdirs() }
+            val destFile = File(receiptsDir, "receipt_${System.currentTimeMillis()}.jpg")
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(destFile).use { output -> input.copyTo(output) }
             }
             destFile.absolutePath
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
+        }.getOrNull()
     }
 }
 

@@ -173,7 +173,11 @@ fun SetupScreen(viewModel: ExpenseViewModel) {
                 if (u1.isEmpty() || u2.isEmpty()) {
                     Toast.makeText(localContext, "Both names are required", Toast.LENGTH_SHORT).show()
                 } else {
-                    viewModel.saveSetup(u1, u2)
+                    viewModel.saveSetup(u1, u2) { ok ->
+                        if (!ok) {
+                            Toast.makeText(localContext, "Couldn't save", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
             },
             modifier = Modifier
@@ -500,8 +504,13 @@ fun DashboardScreen(viewModel: ExpenseViewModel, profile: SetupProfile) {
                     if (kotlin.math.abs(runningBalance) < 0.5) {
                         Toast.makeText(localContext, "Nothing to settle", Toast.LENGTH_SHORT).show()
                     } else {
-                        viewModel.settleUp()
-                        Toast.makeText(localContext, "Settled up!", Toast.LENGTH_SHORT).show()
+                        viewModel.settleUp { ok ->
+                            Toast.makeText(
+                                localContext,
+                                if (ok) "Settled up!" else "Couldn't settle",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
                     }
                 },
                 modifier = Modifier
@@ -1006,14 +1015,40 @@ fun TransactionRow(
             }
         }
 
+        var confirmDelete by remember { mutableStateOf(false) }
+        val ctx = LocalContext.current
+
         // Delete check icon
         IconButton(
-            onClick = { viewModel.deleteExpense(expense) },
+            onClick = { confirmDelete = true },
             modifier = Modifier
                 .size(24.dp)
                 .align(Alignment.CenterVertically)
         ) {
             Text("✕", fontSize = 14.sp, color = WarmGreyFaint)
+        }
+
+        if (confirmDelete) {
+            AlertDialog(
+                onDismissRequest = { confirmDelete = false },
+                title = { Text("Delete this expense?") },
+                text = { Text(expense.description) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        confirmDelete = false
+                        viewModel.deleteExpense(expense) { ok ->
+                            Toast.makeText(
+                                ctx,
+                                if (ok) "Deleted" else "Couldn't delete",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }) { Text("Delete", color = ClayNegative) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
+                }
+            )
         }
     }
 }
@@ -1667,8 +1702,16 @@ fun AddEditExpenseDialog(
                             splitFinal = "Custom $pct%"
                         }
 
+                        val resultHandler: (Boolean) -> Unit = { ok ->
+                            val msg = if (ok) {
+                                if (expense == null) "Added!" else "Updated!"
+                            } else {
+                                "Couldn't save"
+                            }
+                            Toast.makeText(localContext, msg, Toast.LENGTH_SHORT).show()
+                        }
+
                         if (expense == null) {
-                            // Add operation
                             viewModel.addExpense(
                                 date = date,
                                 description = description,
@@ -1677,11 +1720,10 @@ fun AddEditExpenseDialog(
                                 amount = parsedAmt,
                                 paidBy = paidBy,
                                 split = splitFinal,
-                                photoUri = attachmentUriState
+                                photoUri = attachmentUriState,
+                                onResult = resultHandler
                             )
-                            Toast.makeText(localContext, "Added!", Toast.LENGTH_SHORT).show()
                         } else {
-                            // Edit operation
                             viewModel.updateExpense(
                                 id = expense.id,
                                 date = date,
@@ -1693,9 +1735,9 @@ fun AddEditExpenseDialog(
                                 split = splitFinal,
                                 photoUri = attachmentUriState,
                                 removeAttachment = removeAttachmentState,
-                                existingAttachment = expense.attachmentUri
+                                existingAttachment = expense.attachmentUri,
+                                onResult = resultHandler
                             )
-                            Toast.makeText(localContext, "Updated!", Toast.LENGTH_SHORT).show()
                         }
                         onClose()
                     },
@@ -1716,8 +1758,13 @@ fun AddEditExpenseDialog(
                     Spacer(modifier = Modifier.height(8.dp))
                     Button(
                         onClick = {
-                            viewModel.deleteExpense(expense)
-                            Toast.makeText(localContext, "Deleted", Toast.LENGTH_SHORT).show()
+                            viewModel.deleteExpense(expense) { ok ->
+                                Toast.makeText(
+                                    localContext,
+                                    if (ok) "Deleted" else "Couldn't delete",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                             onClose()
                         },
                         modifier = Modifier
@@ -1949,7 +1996,7 @@ fun fmtCompact(n: Double): String {
     return when {
         r == 0L -> ""
         r >= 100000L -> String.format(Locale.US, "%.1fL", r / 100000.0).replace(".0", "")
-        r >= 10000L -> String.format(Locale.US, "%dK", r / 1000)
+        r >= 10000L -> "${kotlin.math.round(r / 1000.0).toLong()}K"
         r >= 1000L -> String.format(Locale.US, "%.1fK", r / 1000.0).replace(".0", "")
         else -> r.toString()
     }
