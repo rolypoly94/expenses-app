@@ -13,6 +13,5 @@ data class Expense(
     val amount: Double,
     val paidBy: String,
     val split: String, // "50/50", "Rahul owes full", "Priya owes full", "Custom 30%", "Personal"
-    val settled: Boolean = false,
-    val attachmentUri: String? = null // local storage file path
+    val settled: Boolean = false
 )

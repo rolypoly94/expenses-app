@@ -1,15 +1,10 @@
 package com.example.data
 
 import android.app.Application
-import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.File
-import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -202,12 +197,10 @@ class ExpenseViewModel(
         amount: Double,
         paidBy: String,
         split: String,
-        photoUri: Uri? = null,
         onResult: (Boolean) -> Unit = {}
     ) {
         viewModelScope.launch {
             val ok = runCatching {
-                val localPath = photoUri?.let { saveReceiptImage(it) }
                 repository.insertExpense(
                     Expense(
                         date = date,
@@ -216,8 +209,7 @@ class ExpenseViewModel(
                         tag = tag?.takeIf { it.isNotBlank() },
                         amount = amount,
                         paidBy = paidBy,
-                        split = split,
-                        attachmentUri = localPath
+                        split = split
                     )
                 )
             }.isSuccess
@@ -235,21 +227,10 @@ class ExpenseViewModel(
         amount: Double,
         paidBy: String,
         split: String,
-        photoUri: Uri? = null,
-        removeAttachment: Boolean = false,
-        existingAttachment: String? = null,
         onResult: (Boolean) -> Unit = {}
     ) {
         viewModelScope.launch {
             val ok = runCatching {
-                var localPath = existingAttachment
-                if (removeAttachment || photoUri != null) {
-                    existingAttachment?.let { deleteLocalFile(it) }
-                    localPath = null
-                }
-                if (photoUri != null) {
-                    localPath = saveReceiptImage(photoUri)
-                }
                 repository.updateExpense(
                     Expense(
                         id = id,
@@ -259,8 +240,7 @@ class ExpenseViewModel(
                         tag = tag?.takeIf { it.isNotBlank() },
                         amount = amount,
                         paidBy = paidBy,
-                        split = split,
-                        attachmentUri = localPath
+                        split = split
                     )
                 )
             }.isSuccess
@@ -271,10 +251,7 @@ class ExpenseViewModel(
     // Delete Expense
     fun deleteExpense(expense: Expense, onResult: (Boolean) -> Unit = {}) {
         viewModelScope.launch {
-            val ok = runCatching {
-                expense.attachmentUri?.let { deleteLocalFile(it) }
-                repository.deleteExpenseById(expense.id)
-            }.isSuccess
+            val ok = runCatching { repository.deleteExpenseById(expense.id) }.isSuccess
             onResult(ok)
         }
     }
@@ -285,26 +262,6 @@ class ExpenseViewModel(
             val ok = runCatching { repository.settleAllUnsettled() }.isSuccess
             onResult(ok)
         }
-    }
-
-    private suspend fun deleteLocalFile(path: String) = withContext(Dispatchers.IO) {
-        runCatching {
-            val file = File(path)
-            if (file.exists()) file.delete()
-        }
-    }
-
-    // Helper file copier — runs off the main thread.
-    private suspend fun saveReceiptImage(uri: Uri): String? = withContext(Dispatchers.IO) {
-        runCatching {
-            val context = getApplication<Application>()
-            val receiptsDir = File(context.filesDir, "receipts").apply { if (!exists()) mkdirs() }
-            val destFile = File(receiptsDir, "receipt_${System.currentTimeMillis()}.jpg")
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(destFile).use { output -> input.copyTo(output) }
-            }
-            destFile.absolutePath
-        }.getOrNull()
     }
 }
 

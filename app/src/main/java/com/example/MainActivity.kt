@@ -2,20 +2,16 @@ package com.example
 
 import android.app.Application
 import android.app.DatePickerDialog
-import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -25,9 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -42,10 +36,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.AsyncImage
 import com.example.data.*
 import com.example.ui.theme.*
-import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -211,9 +203,6 @@ fun DashboardScreen(viewModel: ExpenseViewModel, profile: SetupProfile) {
 
     var showAddEditDialog by remember { mutableStateOf(false) }
     var editingExpense by remember { mutableStateOf<Expense?>(null) }
-    
-    // Zoomed receipt overlay dialog
-    var zoomedImagePath by remember { mutableStateOf<String?>(null) }
     val localContext = LocalContext.current
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -455,9 +444,6 @@ fun DashboardScreen(viewModel: ExpenseViewModel, profile: SetupProfile) {
                                 onEditClick = {
                                     editingExpense = expense
                                     showAddEditDialog = true
-                                },
-                                onPhotoClick = { photoPath ->
-                                    zoomedImagePath = photoPath
                                 }
                             )
                             if (index < shownCount - 1) {
@@ -577,53 +563,6 @@ fun DashboardScreen(viewModel: ExpenseViewModel, profile: SetupProfile) {
             user2 = profile.user2Name,
             onClose = { showAddEditDialog = false }
         )
-    }
-
-    // Zoomed Photo Receipt Viewer dialog popup
-    if (zoomedImagePath != null) {
-        Dialog(
-            onDismissRequest = { zoomedImagePath = null },
-            properties = DialogProperties(usePlatformDefaultWidth = false)
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.82f))
-                    .clickable { zoomedImagePath = null },
-                contentAlignment = Alignment.Center
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(0.9f)
-                        .wrapContentHeight()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White)
-                        .clickable(enabled = false) {}
-                ) {
-                    Column {
-                        Box(modifier = Modifier.fillMaxWidth()) {
-                            IconButton(
-                                onClick = { zoomedImagePath = null },
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(8.dp)
-                            ) {
-                                Icon(Icons.Default.Close, contentDescription = "Close zoom")
-                            }
-                        }
-                        AsyncImage(
-                            model = File(zoomedImagePath!!),
-                            contentDescription = "Receipt receipt zoom view",
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 500.dp)
-                                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-                            contentScale = ContentScale.Fit
-                        )
-                    }
-                }
-            }
-        }
     }
 }
 
@@ -883,8 +822,7 @@ fun TransactionRow(
     u1: String,
     u2: String,
     viewModel: ExpenseViewModel,
-    onEditClick: () -> Unit,
-    onPhotoClick: (String) -> Unit
+    onEditClick: () -> Unit
 ) {
     val isPersonal = expense.split == "Personal"
     val bucket = viewModel.bucketFor(expense.category)
@@ -1001,18 +939,6 @@ fun TransactionRow(
                 color = balanceColor,
                 modifier = Modifier.padding(top = 2.dp)
             )
-        }
-
-        // Receipt attachment image icon
-        if (!expense.attachmentUri.isNullOrEmpty()) {
-            IconButton(
-                onClick = { onPhotoClick(expense.attachmentUri) },
-                modifier = Modifier
-                    .size(24.dp)
-                    .align(Alignment.CenterVertically)
-            ) {
-                Text("📎", fontSize = 14.sp)
-            }
         }
 
         var confirmDelete by remember { mutableStateOf(false) }
@@ -1278,22 +1204,8 @@ fun AddEditExpenseDialog(
         )
     }
 
-    // Attachment scanner photo capture Uri
-    var attachmentUriState by remember { mutableStateOf<Uri?>(null) }
-    var removeAttachmentState by remember { mutableStateOf(false) }
-
     val mruCategories = remember(expenses) { viewModel.getMRUPending(expenses) }
     val localContext = LocalContext.current
-
-    // Launch pick media
-    val pickMedia = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) {
-            attachmentUriState = uri
-            removeAttachmentState = false
-        }
-    }
 
     Dialog(
         onDismissRequest = onClose,
@@ -1588,91 +1500,6 @@ fun AddEditExpenseDialog(
                     }
                 }
 
-                // Field: Receipt Photo Attach area
-                Text(
-                    text = "RECEIPT PHOTO (OPTIONAL)",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = WarmGreyMuted,
-                    modifier = Modifier.padding(bottom = 6.dp)
-                )
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 24.dp)
-                ) {
-                    val displayAttachment = !removeAttachmentState && (attachmentUriState != null || !expense?.attachmentUri.isNullOrEmpty())
-
-                    if (displayAttachment) {
-                        // Display attached thumbnail preview
-                        Box(
-                            modifier = Modifier
-                                .wrapContentSize()
-                                .clip(RoundedCornerShape(8.dp))
-                                .border(1.dp, BorderLight, RoundedCornerShape(8.dp))
-                        ) {
-                            if (attachmentUriState != null) {
-                                AsyncImage(
-                                    model = attachmentUriState,
-                                    contentDescription = "New receipt preview",
-                                    modifier = Modifier.height(200.dp),
-                                    contentScale = ContentScale.FillHeight
-                                )
-                            } else {
-                                AsyncImage(
-                                    model = File(expense!!.attachmentUri!!),
-                                    contentDescription = "Existing receipt preview",
-                                    modifier = Modifier.height(200.dp),
-                                    contentScale = ContentScale.FillHeight
-                                )
-                            }
-
-                            IconButton(
-                                onClick = {
-                                    attachmentUriState = null
-                                    if (expense?.attachmentUri != null) {
-                                        removeAttachmentState = true
-                                    }
-                                },
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(4.dp)
-                                    .size(28.dp)
-                                    .background(Color.Black.copy(alpha = 0.7f), CircleShape)
-                            ) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear image", tint = Color.White, modifier = Modifier.size(16.dp))
-                            }
-                        }
-                    } else {
-                        // Display picker area
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(90.dp)
-                                .background(SurfaceWhite, RoundedCornerShape(10.dp))
-                                .border(BorderStroke(1.dp, BorderStrong), RoundedCornerShape(10.dp))
-                                .clickable {
-                                    pickMedia.launch(
-                                        androidx.activity.result.PickVisualMediaRequest(
-                                            ActivityResultContracts.PickVisualMedia.ImageOnly
-                                        )
-                                    )
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("📎", fontSize = 22.sp)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "Tap to attach a receipt or photo",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = WarmGreyMuted
-                                )
-                            }
-                        }
-                    }
-                }
-
                 // Form Action Buttons
                 Button(
                     onClick = {
@@ -1720,7 +1547,6 @@ fun AddEditExpenseDialog(
                                 amount = parsedAmt,
                                 paidBy = paidBy,
                                 split = splitFinal,
-                                photoUri = attachmentUriState,
                                 onResult = resultHandler
                             )
                         } else {
@@ -1733,9 +1559,6 @@ fun AddEditExpenseDialog(
                                 amount = parsedAmt,
                                 paidBy = paidBy,
                                 split = splitFinal,
-                                photoUri = attachmentUriState,
-                                removeAttachment = removeAttachmentState,
-                                existingAttachment = expense.attachmentUri,
                                 onResult = resultHandler
                             )
                         }
